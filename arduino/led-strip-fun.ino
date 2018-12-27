@@ -1,56 +1,86 @@
 #include <ESP8266WiFi.h>
 #include <PubSubClient.h>
-#include <PubSubClientTools.h>
 
-#define WIFI_SSID "Civilian"
-#define WIFI_PASS "esp8266fun"
-// #define MQTT_SERVER "test.mosquitto.org"
-#define MQTT_SERVER "broker.mqttdashboard.com"
+const char* ssid = "Civilian";
+const char* password = "esp8266fun";
+const char* mqtt_server = "broker.mqtt-dashboard.com";
 
 WiFiClient espClient;
-PubSubClient client(MQTT_SERVER, 1883, espClient);
-PubSubClientTools mqtt(client);
-
+PubSubClient client(espClient);
+long lastMsg = 0;
+char msg[50];
 int value = 0;
-String s = "";
 
-void setup() {
-  Serial.begin(115200);
+void setup_wifi() {
 
-  // Connect to WiFi
-  Serial.print(s+"Connecting to WiFi: "+WIFI_SSID+" ");
-  WiFi.begin(WIFI_SSID, WIFI_PASS);
+  delay(10);
+  // We start by connecting to a WiFi network
+  Serial.println();
+  Serial.print("Connecting to ");
+  Serial.println(ssid);
+
+  WiFi.begin(ssid, password);
+
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
   }
-  Serial.println(s+" connected with IP: " + WiFi.localIP());
 
-  // Connect to MQTT
-  Serial.print(s+"Connecting to MQTT: "+MQTT_SERVER+" ... ");
-  if (client.connect("ESP8266Client")) {
-    Serial.println("connected");
+  randomSeed(micros());
 
-    mqtt.subscribe("test/inTopic1", topic1_subscriber);
-    mqtt.subscribe("test/inTopic2", topic2_subscriber);
+  Serial.println("");
+  Serial.println("WiFi connected");
+  Serial.println("IP address: ");
+  Serial.println(WiFi.localIP());
+}
+
+void callback(char* topic, byte* payload, unsigned int length) {
+  payload[length] = '\0'; // Making sure we have the null termination for String ctor
+  String body = String((char*)payload);
+  Serial.println(body);
+
+  // Switch on the LED if an 1 was received as first character
+  if ((char)payload[0] == '1') {
+    digitalWrite(BUILTIN_LED, LOW);
   } else {
-    Serial.println(s+"failed, rc="+client.state());
+    digitalWrite(BUILTIN_LED, HIGH);
+  }
+
+}
+
+void reconnect() {
+  // Loop until we're reconnected
+  while (!client.connected()) {
+    Serial.print("Attempting MQTT connection...");
+    String clientId = "ESP8266Client-";
+    clientId += String(random(0xffff), HEX);
+    if (client.connect(clientId.c_str())) {
+      Serial.println("connected");
+      // Once connected, publish an announcement...
+      client.publish("ledstripfun", "hello world");
+      client.subscribe("ledstripfun");
+    } else {
+      Serial.print("failed, rc=");
+      Serial.print(client.state());
+      Serial.println(" try again in 5 seconds");
+      // Wait 5 seconds before retrying
+      delay(5000);
+    }
   }
 }
 
+void setup() {
+  pinMode(BUILTIN_LED, OUTPUT);
+  Serial.begin(115200);
+  setup_wifi();
+  client.setServer(mqtt_server, 1883);
+  client.setCallback(callback);
+}
+
 void loop() {
+  if (!client.connected()) {
+    Serial.println("reconnect");
+    reconnect();
+  }
   client.loop();
-}
-
-void publisher() {
-  ++value;
-  mqtt.publish("test/outTopic", s+"hello world "+value);
-}
-
-void topic1_subscriber(String topic, String message) {
-  Serial.println(s+"Message arrived in function 1 ["+topic+"] "+message);
-}
-
-void topic2_subscriber(String topic, String message) {
-  Serial.println(s+"Message arrived in function 2 ["+topic+"] "+message);
 }
