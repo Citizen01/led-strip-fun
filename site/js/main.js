@@ -1,6 +1,6 @@
 (function () {
     // Create a client instance
-    var client = new Paho.MQTT.Client("test.mosquitto.org", 8080, "myclientid_" + parseInt(Math.random() * 100, 10));
+    var client = new Paho.MQTT.Client("broker.hivemq.com", 8000, "myclientid_" + parseInt(Math.random() * 100, 10));
 
     // set callback handlers
     client.onConnectionLost = function (responseObject) {
@@ -27,9 +27,9 @@
                 $("#btn-disco").show();
 
                 console.log("onConnect");
-                client.subscribe("led");
+                client.subscribe("ledstripfun");
                 message = new Paho.MQTT.Message("Hello");
-                message.destinationName = "led";
+                message.destinationName = "ledstripfun";
                 client.send(message);
             },
             onFailure: function (message) {
@@ -50,17 +50,30 @@
 })();
 
 function send(beta) {
-    message = new Paho.MQTT.Message(""+beta);
-    message.destinationName = "led";
-    client.send(message);
+    if (client.isConnected()) {   
+        message = new Paho.MQTT.Message(""+beta);
+        message.destinationName = "ledstripfun";
+        client.send(message);
+    }
 }
 
+function getCurrentTimestamp() { return +new Date(); }
+
+var updateTimerMs = 100;
+var lastUpdateTimestamp = getCurrentTimestamp();
+var lastBetaValue = 0;
 (function () {
     var gn = new GyroNorm();
     gn.init().then(function () {
         gn.start(function (data) {
-            $("#accel").text(JSON.stringify(data.do))
-            send(data.do.beta)
+            $("#accel").text(JSON.stringify(data.do));
+            var beta = data.do.beta;
+            var betaDeviance = Math.abs(beta - lastBetaValue)
+            if (getCurrentTimestamp() - lastUpdateTimestamp >= 500 || betaDeviance > 0.5) {
+                send(beta);
+                lastBetaValue = data.do.beta;
+                lastUpdateTimestamp = getCurrentTimestamp();
+            }
         });
     }).catch(function (e) {
         // Catch if the DeviceOrientation or DeviceMotion is not supported by the browser or device
